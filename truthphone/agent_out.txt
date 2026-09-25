@@ -1,0 +1,65 @@
+Testing the graph...
+
+🌐 --> Opening Chrome to search Amazon for: Samsung 5G phone under 30k for daily use
+🌐 Opening Chrome and navigating to Amazon.in...
+⌨️ Typing query into Amazon search bar...
+🖱️ Clicking search...
+👀 Visually scrolling through Amazon results...
+✅ Playwright extraction successful. Sending raw data to LLM for parsing...
+
+[DEBUG] RAW AMAZON TEXT:
+--- EXACT PHONES WITH URLS ---
+
+
+--- RAW SEARCH TEXT ---
+Samsung Galaxy A56 5G Mobile (Awesome Midnight Blue, 8GB, 256GB) | Segment Most Complete Triple Camera | 50MP | AI Editing | 4nm Processor | sAMOLED | 5000mAh | Gorilla Glass Victus+| Knox Security 4.4 4.4 out of 5 stars  (679) 1K+ bought in past month Price, product page ₹40,999 ₹40,999  M.R.P: ₹52,999 M.R.P:  ₹52,999 ₹52,999 (23% off) Up to 5% back with Amazon Pay ICICI card Up to 5% back with Amazon Pay ICI... FREE delivery Mon, 28 Sept Or fastest delivery Tomorrow 7 am - 12 pm Add to cart
+
+--- NEXT PRODUCT ---
+
+Add to cart
+
+--- NEXT PRODUCT ---
+
+Samsung A36 5G (Dark Green, 128 GB) (8 GB RAM) Price, product page ₹27,885 ₹27,885  M.R.P: ₹39,499 M.R.P:  ₹39,499 ₹39,499 (29% off) Up to 5% back with Amazon Pay ICICI card Up to 5% back with Amazon Pay ICI... FREE delivery Tue, 29 Sept Add to cart More Buying Choices ₹27,880(5 new offers)
+
+--- NEXT PRODUCT ---
+
+Add to cart
+
+--- NEXT PRODUCT ---
+
+Sponsored  Lava Bold N4 Lite (Empire Gold, 3GB RAM, 32GB Storage) | 6.56" qHD Display | 8MP Rear Camera | 5000 mAh Battery | Free Service @ Home | Fingerprint Reader | Charger & Phone-Cover in Box 3.4 3.4 out of 5 stars  (28) Limited time deal Price, product page ₹8,399 ₹8,399  M.R.P: ₹9,999 M.R.P:  ₹9,999 ₹9,999 (16% off) Up to 5% back with Amazon Pay ICICI card Up to 5% back with Amazon Pay ICI... FREE delivery Mon, 28 Sept Or fastest delivery Sun, 27 Sept Add to cart +1 other color/pattern
+
+--- NEXT PRODUCT ---
+
+Add to cart
+
+--- NEXT PRODUCT ---
+
+Sponsored  Redmi Turbo 5 (8GB + 256GB) Asphalt Black | Dimensity 8500 Ultra | Mega 7540mAh Battery | 100W HyperCharge | Compact 16.75cm(6.59) 120Hz AMOLED Screen | 50MP Sony OIS Camera 4.1 4.1 out of 5 stars  (666) 300+ bought in past month Price, product page ₹41,999 ₹41,999  M.R.P: ₹54,999 M.R.P:  ₹54,999 ₹54,999 (24% off) 10% Off on select cards 10% Off on select cards FREE delivery Mon, 28 Sept Or fastest delivery Tomorrow 7 am - 12 pm Add to cart +2 other colors/patterns
+
+--- NEXT PRODUCT ---
+
+Add to cart
+
+--- NEXT PRODUCT ---
+
+Samsung Galaxy M36 5G Mobile (Velvet Black, 6GB RAM, 128GB Storage) | Google Gemini| Gorilla Glass Victus+ | 7.7mm | AI Enhanced 50MP OIS Triple Camera| Nightography| Lag-free Gaming | Without Charger 4.1 4.1 out of 5 stars  (3.5K) 3K+ bought in past month Price, product page ₹21,999 ₹21,999  M.R.P: ₹25,499 M.R.P:  ₹25,499 ₹25,499 (14% off) Up to 5% back with Amazon Pay ICICI card Up to 5% back with Amazon Pay ICI... FREE delivery Mon, 28 Sept Or fastest delivery Sun, 27 Sept Add to cart
+
+--- NEXT PRODUCT ---
+
+Add to cart
+
+✅ LLM extracted the following phones:
+1. Samsung Galaxy A36 5G | ₹27,885 | 8GB RAM, 128GB Storage | N/A  
+2. Samsung Galaxy M36 5G | ₹21,999 | 6GB RAM, 128GB Storage | N/A...
+
+[SEARCH PARSER] Raw LLM Output:
+Samsung Galaxy A36 5G | ₹27,885 | 8GB RAM, 128GB Storage | N/A
+Samsung Galaxy M36 5G | ₹21,999 | 6GB RAM, 128GB Storage | N/A
+
+[SEARCH] Final phones parsed: 2
+
+
+FINAL RESULT:
+{'messages': [HumanMessage(content='Samsung 5G phone under 30k for daily use', additional_kwargs={}, response_metadata={}), AIMessage(content='Sure thing! I’ll start looking for a Samsung 5G phone that fits your budget and daily use needs.\n\n🔍 Great! Searching live Amazon listings for you now…', additional_kwargs={}, response_metadata={}, tool_calls=[], invalid_tool_calls=[]), AIMessage(content='\n\n---\n**Amazon Links:**\n1. [Samsung Galaxy A36 5G](N/A) — ₹27,885\n2. [Samsung Galaxy M36 5G](N/A) — ₹21,999', additional_kwargs={}, response_metadata={}, tool_calls=[], invalid_tool_calls=[])], 'ready_to_search': True, 'search_results': [PhoneCandidate(name='Samsung Galaxy A36 5G', price='₹27,885', specs='8GB RAM, 128GB Storage', url='N/A'), PhoneCandidate(name='Samsung Galaxy M36 5G', price='₹21,999', specs='6GB RAM, 128GB Storage', url='N/A')], 'comparison_summary': '\n\n---\n**Amazon Links:**\n1. [Samsung Galaxy A36 5G](N/A) — ₹27,885\n2. [Samsung Galaxy M36 5G](N/A) — ₹21,999', 'current_phase': 'selection'}

@@ -1,4 +1,6 @@
 import os
+import sys
+import logging
 import traceback
 import uvicorn
 from fastapi import FastAPI, Request
@@ -8,7 +10,25 @@ from pydantic import BaseModel
 from typing import List, Optional
 import copy
 
-import sys
+os.environ["PYTHONIOENCODING"] = "utf-8"
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+class UTF8StreamHandler(logging.StreamHandler):
+    def __init__(self, stream=None):
+        super().__init__(stream or sys.stdout)
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self.stream.write(msg + self.terminator)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
+logging.basicConfig(level=logging.INFO, handlers=[UTF8StreamHandler()])
+
 if sys.platform == "win32":
     import asyncio
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -235,11 +255,22 @@ async def chat_endpoint(req: ChatRequest):
                 global_state["current_phase"] = res["current_phase"]
 
             if global_state.get("selected_phone_index") is not None:
-                # Run the verification pipeline (planner -> verifier -> critic -> finalizer)
-                # We need to enter through selection_wait_node in the graph
-                final_state = await langgraph_app.ainvoke(global_state)
-                global_state.update(final_state)
-                return {"response": _get_latest_ai_text(final_state)}
+                from agent import verification_planner_node, verifier_node, critic_node, finalizer_node
+                
+                # Manually walk the verification pipeline to avoid restarting the graph
+                res = await verification_planner_node(global_state)
+                global_state.update(res)
+                
+                res = await verifier_node(global_state)
+                global_state.update(res)
+                
+                res = await critic_node(global_state)
+                global_state.update(res)
+                
+                res = await finalizer_node(global_state)
+                global_state.update(res)
+                
+                return {"response": _get_latest_ai_text(global_state)}
             else:
                 return {"response": extract_text(res["messages"][-1].content) if res.get("messages") else "Please pick a number (1-5)."}
 
