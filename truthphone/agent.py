@@ -80,33 +80,13 @@ You ideally want to know: budget range, brand preference, use case, and 4G vs 5G
 
 Rules:
 - Ask questions ONE at a time.
-- If the user has given you at least a budget range OR a brand AND at least one other preference (use case, 5G, etc.), that is ENOUGH to start searching. Output [READY_TO_SEARCH] at the END of your message.
-- If the user explicitly asks you to find/search/show phones even without full info, output [READY_TO_SEARCH] immediately.
 - NEVER ask the same question twice. NEVER ask for budget if it was already mentioned.
-- If user says anything like 'find me', 'show me', 'search', 'ok find', 'just find', treat it as ready to search.
-- Default missing info: brand=any, 5G=yes, use_case=daily use, budget=15000-30000"""
+- Do NOT output any system commands, function calls, tool calls, or JSON. YOU MUST RESPOND ONLY IN PLAIN CONVERSATIONAL TEXT.
+- The user will manually initiate the search when they are ready. Just converse patiently."""
 
     messages = [SystemMessage(content=system_prompt)] + state["messages"]
     response = await llm.ainvoke(messages)
     text = extract_text(response.content)
-
-    # Also detect if user is clearly asking to search with keywords
-    last_user_msg = ""
-    for m in reversed(state["messages"]):
-        if isinstance(m, HumanMessage):
-            last_user_msg = extract_text(m.content).lower()
-            break
-
-    search_trigger_phrases = ["find me", "find a", "show me", "search", "ok find", "just find", "look for", "get me"]
-    user_wants_search = any(phrase in last_user_msg for phrase in search_trigger_phrases)
-
-    if "[READY_TO_SEARCH]" in text or user_wants_search:
-        text = text.replace("[READY_TO_SEARCH]", "").strip()
-        return {
-            "messages": [AIMessage(content=text + "\n\n🔍 Great! Searching live Amazon listings for you now…")],
-            "ready_to_search": True,
-            "current_phase": "search",
-        }
 
     return {
         "messages": [AIMessage(content=text)],
@@ -147,35 +127,33 @@ def _run_playwright_search_sync(query: str) -> str:
                 page.evaluate("window.scrollBy(0, 700)")
                 page.wait_for_timeout(1000)
             
-            # Get the main search text FIRST before navigating away (Target exact product cards!)
-            main_text = page.evaluate('''() => {
-                let items = Array.from(document.querySelectorAll('div[data-asin]:not([data-asin=""])'));
-                return items.slice(0, 10).map(item => item.innerText.replace(/\\n+/g, ' ')).join('\\n\\n--- NEXT PRODUCT ---\\n\\n');
-            }''')
-            
-            # Extract the actual product URLs from the product cards ONLY
+            # Extract the actual product URLs bound directly to their text
             products_data = []
             try:
                 products_data = page.evaluate('''() => {
                     let items = Array.from(document.querySelectorAll('div[data-asin]:not([data-asin=""])'));
-                    let urls = new Set();
+                    let unique = [];
+                    let seenUrls = new Set();
                     
                     for (let item of items) {
                         let a = item.querySelector('a[href*="/dp/"]');
                         if (a && a.href) {
                             let cleanUrl = a.href.split('?')[0]; // Remove tracking garbage
-                            if (!urls.has(cleanUrl)) {
-                                urls.add(cleanUrl);
+                            let text = item.innerText.trim().replace(/\\n+/g, ' ');
+                            if (!seenUrls.has(cleanUrl) && text.length > 30) {
+                                seenUrls.add(cleanUrl);
+                                unique.push({url: cleanUrl, text: text});
                             }
                         }
                     }
-                    return Array.from(urls).slice(0, 5);
+                    return unique.slice(0, 5);
                 }''')
             except Exception as e:
                 print(f"Error extracting data: {e}")
                 
             # VISUAL HACKATHON FEATURE: Go to the product page, scroll, and come back!
-            for url in products_data:
+            for p_data in products_data:
+                url = p_data['url']
                 print(f"👀 Visually inspecting product: {url.split('/dp/')[0].split('/')[-1][:20]}...")
                 try:
                     page.goto(url, timeout=20000)
@@ -187,9 +165,13 @@ def _run_playwright_search_sync(query: str) -> str:
                 except Exception as e:
                     print(f"[VISUAL_HACK] Skipped visual reading: {e}")
             
-            # Return the EXACT links at the TOP so the LLM cannot miss them
-            formatted_urls = "\n".join(products_data)
-            return f"--- EXACT PRODUCT URLS ---\n{formatted_urls}\n\n--- RAW SEARCH TEXT ---\n{main_text[:25000]}"
+            # Return the EXACT links bound to their text
+            formatted_blocks = []
+            for idx, p in enumerate(products_data):
+                formatted_blocks.append(f"--- PRODUCT {idx+1} ---\nURL: {p['url']}\nDETAILS: {p['text']}")
+            
+            final_text = "\n\n".join(formatted_blocks)
+            return f"--- EXACT RAW AMAZON DATA WITH URLS ---\n{final_text[:25000]}"
         except Exception as e:
             print(f"[PLAYWRIGHT ERROR] {e}")
             import traceback
@@ -211,21 +193,14 @@ def _run_playwright_google_sync(queries: List[str]) -> dict:
         try:
             for q in queries:
                 print(f"   🔍 Fact-checking: {q}")
-                url = f"https://www.google.com/search?q={urllib.parse.quote(q)}"
+                # Use DuckDuckGo's pure HTML endpoint without interacting to bypass bot-detection loops
+                url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(q)}"
                 page.goto(url, timeout=60000)
                 
-                # DYNAMIC CAPTCHA DETECTOR
                 page.wait_for_timeout(2000)
-                if "/sorry/" in page.url:
-                    print("⚠️ CAPTCHA DETECTED! Pausing for up to 3 minutes so you can solve it...")
-                    for _ in range(90):
-                        if "/sorry/" not in page.url:
-                            print("✅ CAPTCHA Solved! Resuming immediately...")
-                            break
-                        page.wait_for_timeout(2000)
                 
-                # VISUAL HACKATHON FEATURE: Smoothly scroll through Google results
-                print("👀 Visually reading Google Search results...")
+                # VISUAL HACKATHON FEATURE: Smoothly scroll through results (NO CLICKING)
+                print("👀 Visually reading DuckDuckGo Search results...")
                 for _ in range(3):
                     page.evaluate("window.scrollBy(0, 600)")
                     page.wait_for_timeout(1500)
@@ -253,7 +228,7 @@ async def search_node(state: AgentState):
             break
             
     if not search_query:
-        search_query = extract_text(state["messages"][-1].content)
+        search_query = "Smartphones"
 
     loop = asyncio.get_event_loop()
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -271,15 +246,16 @@ async def search_node(state: AgentState):
         extraction_prompt = f"""You are a master data extractor. The user searched for: '{search_query}'.
 Below is the raw, messy text scraped directly from the Amazon India search results page.
 
-Extract up to 5 DISTINCT and BEST matching smartphones from this text.
-Look carefully for the Name, the Price, and key Specs (RAM, Storage, Processor if visible).
-For the URL, you MUST use one of the exact links provided under '--- EXACT PRODUCT URLS ---'. Do not guess or generate generic links. Use the URL that visually matches the phone name.
+Extract exactly the top 5 smartphones from this text that BEST MATCH the user's requirements (Budget, Brand, etc.). 
+CRITICAL RULE: Do not output more than 5 phones to keep the processing fast.
+
+For the URL, you MUST extract the exact URL provided next to the product details. Every phone you list MUST have a valid, extracted URL. Do not omit the URL!
 
 Return ONLY a numbered list separated by pipes. Example exactly like this:
 1. Samsung Galaxy M15 5G | ₹12,000 | 4GB RAM, 128GB Storage | https://www.amazon.in/dp/B0CX...
 2. Name | Price | Specs | URL
 
-If you find fewer than 5 phones, just list the ones you found. Do not write any conversational text.
+Do not write any conversational text.
 
 Raw Amazon Text:
 {raw_amazon_text[:25000]}
@@ -306,7 +282,7 @@ IMPORTANT: Do NOT use markdown (like **bold**). Do NOT add any introductory text
     parse_prompt = f"""Here are raw search results for smartphones:
 {search_results_text}
 
-Extract exactly 5 distinct smartphones from this text.
+Extract ALL smartphones present in this text.
 Reply ONLY with a list in this exact format (one phone per line, separated by the pipe | character):
 Name | Price | Specs/Rating | URL
 
@@ -330,10 +306,16 @@ IMPORTANT: Do NOT use markdown (like **). Do NOT add introductory text. If there
                 name=parts[0],
                 price=parts[1] if len(parts) > 1 else "N/A",
                 specs=parts[2] if len(parts) > 2 else "N/A",
-                url=parts[3] if len(parts) > 3 else "https://amazon.in",
+                url=parts[3] if len(parts) > 3 else "N/A",
             ))
-        if len(phones) >= 5:
-            break
+        elif "₹" in line and len(line) > 10:
+            # Fallback if the AI forgot the pipe characters but included a price
+            phones.append(PhoneCandidate(
+                name=line[:50].strip() + "...",
+                price="See details",
+                specs="Data extracted directly from AI text",
+                url="N/A"
+            ))
 
     print(f"[SEARCH] Final phones parsed: {len(phones)}")
     return {"search_results": phones, "current_phase": "comparison"}
@@ -398,24 +380,66 @@ async def selection_wait_node(state: AgentState):
     }
 
 
+def _run_amazon_product_sync(url: str) -> str:
+    """Visits the Amazon product page to extract full specs before fact-checking."""
+    from playwright.sync_api import sync_playwright
+    print(f"\n🌐 --> Opening Chrome to read FULL specs directly from Amazon product page...")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        page = browser.new_page()
+        try:
+            page.goto(url, timeout=60000)
+            page.wait_for_timeout(2000)
+            page.evaluate("window.scrollBy(0, 1500)")
+            page.wait_for_timeout(2000)
+            # Extract ONLY the core product details, ignoring related products and reviews
+            product_details = page.evaluate('''() => {
+                let title = document.querySelector('#productTitle') ? document.querySelector('#productTitle').innerText.trim() : '';
+                let bullets = document.querySelector('#feature-bullets') ? document.querySelector('#feature-bullets').innerText.trim() : '';
+                let specs1 = document.querySelector('#productDetails_techSpec_section_1') ? document.querySelector('#productDetails_techSpec_section_1').innerText.trim() : '';
+                let specs2 = document.querySelector('#productDetails_techSpec_section_2') ? document.querySelector('#productDetails_techSpec_section_2').innerText.trim() : '';
+                let description = document.querySelector('#productDescription') ? document.querySelector('#productDescription').innerText.trim() : '';
+                return `Title: ${title}\\n\\nKey Features:\\n${bullets}\\n\\nTechnical Specifications:\\n${specs1}\\n${specs2}\\n\\nDescription:\\n${description}`;
+            }''')
+            return product_details
+        except Exception as e:
+            return ""
+        finally:
+            browser.close()
+
 # ── Agent 4: Verification Planner ─────────────────────────────────────────────
 async def verification_planner_node(state: AgentState):
     """Decomposes the listing into specific checkable claims."""
+    import concurrent.futures
+    import asyncio
+    
     phone = state["search_results"][state["selected_phone_index"]]
+
+    # Run Playwright in a thread to scrape the full Amazon product page!
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        full_amazon_text = await loop.run_in_executor(
+            executor, _run_amazon_product_sync, phone.url
+        )
+    
+    if full_amazon_text and len(full_amazon_text) > 100:
+        phone_specs_context = full_amazon_text[:15000]
+    else:
+        phone_specs_context = phone.specs
 
     prompt = f"""You are the Verification Planner. The user wants to fact-check this phone listing:
 Name: {phone.name}
-Specs: {phone.specs}
 URL: {phone.url}
+Full Product Details: {phone_specs_context}
 
-List 3-4 specific checkable claims from this listing (e.g. '8GB RAM', 'Snapdragon 7 Gen 1', '5000mAh battery', '5G support').
-Focus on claims that are often exaggerated in marketing.
+List 3-4 specific checkable claims extracted STRICTLY from this listing's specs. Do not invent claims.
+Focus on claims that are often exaggerated in marketing (e.g., Battery capacity, RAM size, Processor model).
 
 Reply ONLY as a numbered list, one claim per line. Example:
-1. 8GB RAM
-2. 5000mAh battery
-3. Snapdragon 7 Gen 1 processor
-4. 5G support"""
+1. [Insert Claim 1 from specs]
+2. [Insert Claim 2 from specs]
+3. [Insert Claim 3 from specs]
+4. [Insert Claim 4 from specs]"""
 
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
@@ -560,7 +584,7 @@ Write a clear, honest summary:
     return {
         "messages": [AIMessage(content=text)],
         "final_report": text,
-        "current_phase": "done",
+        "current_phase": "selection",
     }
 
 
